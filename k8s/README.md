@@ -16,34 +16,35 @@ Here are a few examples of how to install or upgrade the Bag of Words Helm chart
 ### Deploy with a bundled PostgreSQL instance
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
- --set postgresql.auth.username=<PG-USER> \
- --set postgresql.auth.password=<PG-PASS> \
- --set postgresql.auth.database=<PG-DB>
+ -n bowapp bowapp bow/bagofwords \
+ --set postgres.userDatabase.user.value=<PG-USER> \
+ --set postgres.userDatabase.password.value=<PG-PASS> \
+ --set postgres.userDatabase.name=bagofwords \
+ --set host=<HOST>
 ```
 
 ### Deploy without TLS and with a custom hostname
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
-  --set host=<HOST> \
- --set postgresql.auth.username=<PG-USER> \
- --set postgresql.auth.password=<PG-PASS> \
- --set postgresql.auth.database=<PG-DB> \
- --set ingress.tls=false
+ -n bowapp bowapp bow/bagofwords \
+ --set host=<HOST> \
+ --set postgres.userDatabase.user.value=<PG-USER> \
+ --set postgres.userDatabase.password.value=<PG-PASS> \
+ --set postgres.userDatabase.name=bagofwords \
+ --set ingress.tls.enabled=false
 ```
 
 ### Deploy with TLS, cert-manager, and Google OAuth
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
+ -n bowapp bowapp bow/bagofwords \
  --set host=<HOST> \
- --set postgresql.auth.username=<PG-USER> \
- --set postgresql.auth.password=<PG-PASS> \
- --set postgresql.auth.database=<PG-DB> \
- --set config.googleOauthEnabled=true \
- --set config.googleClientId=<CLIENT_ID> \
- --set config.googleClientSecret=<CLIENT_SECRET>
+ --set postgres.userDatabase.user.value=<PG-USER> \
+ --set postgres.userDatabase.password.value=<PG-PASS> \
+ --set postgres.userDatabase.name=bagofwords \
+ --set config.googleOAuth.enabled=true \
+ --set config.googleOAuth.clientId=<CLIENT_ID> \
+ --set config.googleOAuth.clientSecret=<CLIENT_SECRET>
 ```
 
 ### Deploy with AWS Aurora and IAM Authentication
@@ -58,8 +59,10 @@ When using a managed database like AWS Aurora PostgreSQL, the chart skips the bu
 
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
+ -n bowapp bowapp bow/bagofwords \
  --set host=<HOST> \
+ --set postgres.enabled=false \
+ --set externalDatabase.enabled=true \
  --set database.auth.provider=aws_iam \
  --set database.auth.region=us-east-1 \
  --set database.auth.sslMode=require \
@@ -73,8 +76,10 @@ helm upgrade -i --create-namespace \
 For example, with a real Aurora cluster:
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
+ -n bowapp bowapp bow/bagofwords \
  --set host=bow.example.com \
+ --set postgres.enabled=false \
+ --set externalDatabase.enabled=true \
  --set database.auth.provider=aws_iam \
  --set database.auth.region=us-east-1 \
  --set database.auth.sslMode=require \
@@ -93,6 +98,12 @@ For Aurora deployments, you can also set all values in a file:
 # aurora-values.yaml
 host: bow.example.com
 
+postgres:
+  enabled: false
+
+externalDatabase:
+  enabled: true
+
 database:
   auth:
     provider: aws_iam
@@ -109,13 +120,13 @@ serviceAccount:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/bow-rds-role
 
 config:
-  encryptionKey: "<your-encryption-key>"
+  encryptionKey: "${BOW_ENCRYPTION_KEY}"
   baseUrl: "https://bow.example.com"
 ```
 
 ```bash
 helm upgrade -i --create-namespace \
- -nbowapp-1 bowapp bow/bagofwords \
+ -n bowapp bowapp bow/bagofwords \
  -f aurora-values.yaml
 ```
 
@@ -124,7 +135,7 @@ helm upgrade -i --create-namespace \
 ```bash
    kubectl create namespace <namespace>
 ```
-2. Create the secret with the environment variables you want to override
+2. Create the secret with the environment variables you want to inject
 ```yaml
 apiVersion: v1
 kind: Secret
@@ -132,40 +143,21 @@ metadata:
   name: <secret-name>
   namespace: <namespace>
 stringData:
-  postgres-password: "<postgres-password>"
   BOW_DATABASE_URL: "postgresql://<postgres-user>:<postgres-password>@<postgres-host>:5432/<postgres-database>"
-  BOW_BASE_URL: "<base-url>"
   BOW_ENCRYPTION_KEY: "<encryption-key>"
-  BOW_GOOGLE_AUTH_ENABLED: "false"
-  BOW_GOOGLE_CLIENT_ID: "<client-id>"
-  BOW_GOOGLE_CLIENT_SECRET: "<client-secret>"
-  BOW_ALLOW_UNINVITED_SIGNUPS: "false"
-  BOW_ALLOW_MULTIPLE_ORGANIZATIONS: "false"
-  BOW_VERIFY_EMAILS: "false"
-  BOW_INTERCOM_ENABLED: "false"
-
-  # SMTP Configuration
-  BOW_SMTP_HOST: "<smtp-host>"
-  BOW_SMTP_PORT: "<smtp-port>"
-  BOW_SMTP_USERNAME: "<smtp-username>"
   BOW_SMTP_PASSWORD: "<smtp-password>"
-  BOW_SMTP_FROM_NAME: "<from-name>"
-  BOW_SMTP_FROM_EMAIL: "<from-email>"
-  BOW_SMTP_USE_TLS: "true"
-  BOW_SMTP_USE_SSL: "false"
-  BOW_SMTP_USE_CREDENTIALS: "true"
-  BOW_SMTP_VALIDATE_CERTS: "true"
+  # Add any other BOW_* env vars you want to override
 ```
 
-**Note**: When using an existing secret, the values in the secret will override the default values from the ConfigMap. You only need to include the environment variables you want to override.
+**Note**: The new chart resolves `${ENV_VAR}` placeholders in `bow-config.yaml` at runtime, so any secret value referenced as `${BOW_FOO}` in the config will be read from the matching env var.
 
 3. Deploy BoW Application
 ```bash
-helm install \
-  bowapp ./chart \
- -n bowapp-1 \
- --set postgresql.auth.existingSecret=existing-bowapp-secret \
- --set config.secretRef=existing-bowapp-secret
+helm upgrade -i --create-namespace \
+ -n bowapp bowapp bow/bagofwords \
+ --set postgres.enabled=false \
+ --set externalDatabase.enabled=true \
+ --set envFromSecrets={<secret-name>}
 ```
 
 
@@ -186,14 +178,22 @@ For IRSA (EKS IAM Roles for Service Accounts), annotate with the IAM role ARN:
 ```
 
 ### Configure node selector
-For adding a node selector to both the BowApp and the PostgreSQL instance set the following flag during `helm install`
-command ` --set postgresql.primary.nodeSelector.'kubernetes\.io/hostname'=kind-control-plane`
-Otherwise, set node selector directly in values.yaml
+To schedule the BowApp pod on a specific node pool, set `nodeSelector` on the app:
+```bash
+--set nodeSelector.'karpenter\.sh/nodepool'=general-apps
+```
+
+To also schedule the bundled PostgreSQL pod on a specific node, set `postgres.nodeSelector`:
+```bash
+--set postgres.nodeSelector.'kubernetes\.io/hostname'=kind-control-plane
+```
+
+Or set both directly in values.yaml:
 ```yaml
-postgresql:
-  ...
-  primary:
-    ...
-    nodeSelector:
-      kubernetes.io/hostname: kind-control-plane
+nodeSelector:
+  karpenter.sh/nodepool: general-apps
+
+postgres:
+  nodeSelector:
+    kubernetes.io/hostname: kind-control-plane
 ```
