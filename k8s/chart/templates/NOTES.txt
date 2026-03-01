@@ -1,0 +1,53 @@
+Bag of Words has been deployed!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Application URL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- if .Values.httpRoute.enabled }}
+  Gateway API HTTPRoute: https://{{ index .Values.httpRoute.hostnames 0 | default .Values.host }}
+{{- else if .Values.ingress.enabled }}
+  {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.host }}
+{{- else }}
+  Port-forward to access the app locally:
+
+    kubectl port-forward svc/{{ include "bagofwords.fullname" . }} 3000:3000 -n {{ .Release.Namespace }}
+
+  Then open: http://localhost:3000
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Check pod status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "bagofwords.name" . }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Important — Encryption Key
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Make sure BOW_ENCRYPTION_KEY is set consistently across upgrades.
+If it changes, encrypted data in the database becomes unreadable.
+
+Inject it via env[] with a secretKeyRef or envFromSecrets[]:
+
+  env:
+    - name: BOW_ENCRYPTION_KEY
+      valueFrom:
+        secretKeyRef:
+          name: my-bow-secret
+          key: encryption_key
+
+{{- if .Values.postgresql.enabled }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bundled PostgreSQL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A single-instance PostgreSQL is included for convenience.
+For production, consider an external managed database and set:
+
+  postgresql.enabled: false
+  externalDatabase.enabled: true
+  env:
+    - name: BOW_DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: my-db-secret
+          key: database_url
+{{- end }}

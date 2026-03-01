@@ -1,89 +1,346 @@
-image: bagofwords/bagofwords:latest
-host: app.bagofwords.com
-registry:
-  name: bow-app-registry
-  url: docker.io
-postgresql:
-  auth:
-    username: ""
-    password: ""
-    database: ""
-    existingSecret: ""
-  primary:
-    persistence:
-      size: 20Gi
-    nodeSelector: {}
+# =============================================================================
+# Bag of Words — Helm Chart Default Values
+# =============================================================================
 
-# Managed database with IAM auth (alternative to the bundled postgresql subchart).
-# When database.auth.provider is not "password", the postgresql subchart values
-# above are ignored and the app connects to the external managed database instead.
+# -- Container image
+image:
+  repository: bagofwords/bagofwords
+  tag: latest
+  pullPolicy: Always
+
+# -- Override chart name / full name
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Replica count (ignored when autoscaling.enabled is true)
+replicaCount: 1
+
+# -- Public-facing hostname (used by Ingress / HTTPRoute)
+host: app.bagofwords.com
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  # Set to false to skip creating the ServiceAccount (use an existing one)
+  create: true
+  name: bowapp
+  annotations: {}
+  # Name of an existing imagePullSecret to attach to the SA.
+  # Leave empty to skip (no imagePullSecrets block rendered).
+  imagePullSecret: ""
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: "1"
+    memory: 1500Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# =============================================================================
+# Health Probes — all three target GET /health on port 3000
+# =============================================================================
+startupProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 30
+  timeoutSeconds: 5
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 5
+  timeoutSeconds: 5
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 5
+  timeoutSeconds: 5
+
+# =============================================================================
+# Security Context
+# NOTE: readOnlyRootFilesystem MUST be false — the app writes to
+#       /app/backend/uploads/ and /app/backend/logs at runtime.
+# =============================================================================
+containerSecurityContext:
+  runAsNonRoot: false
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+podSecurityContext:
+  fsGroup: 1000
+
+# =============================================================================
+# Node Scheduling
+# =============================================================================
+nodeSelector: {}
+# Example (Karpenter):
+#   karpenter.sh/nodepool: general-apps
+
+tolerations: []
+# Example:
+#   - key: role
+#     value: general-apps
+#     effect: NoSchedule
+
+affinity: {}
+
+# =============================================================================
+# Pod Metadata
+# =============================================================================
+podAnnotations: {}
+# Example (Stakater Reloader — auto-restart on ConfigMap/Secret changes):
+#   reloader.stakater.com/auto: "true"
+
+podLabels: {}
+commonLabels: {}
+
+# =============================================================================
+# Environment Variables
+# Supports plain values, secretKeyRef, and configMapKeyRef.
+#
+# Plain value:
+#   - name: MY_VAR
+#     value: "plain"
+#
+# From a Secret:
+#   - name: BOW_ENTRA_CLIENT_ID
+#     valueFrom:
+#       secretKeyRef:
+#         name: my-secret
+#         key: ENTRA_CLIENT_ID
+#
+# From a ConfigMap:
+#   - name: MY_VAR
+#     valueFrom:
+#       configMapKeyRef:
+#         name: my-configmap
+#         key: my-key
+# =============================================================================
+env: []
+
+# -- Inject all keys from existing Secrets as env vars (envFrom secretRef)
+envFromSecrets: []
+# - name: bow-app-secret
+
+# -- Inject all keys from existing ConfigMaps as env vars (envFrom configMapRef)
+envFromConfigMaps: []
+
+# =============================================================================
+# Database
+# When postgresql.enabled=true and externalDatabase.enabled=false,
+# BOW_DATABASE_URL is automatically injected into the Deployment from
+# the bundled PostgreSQL subchart credentials.
+#
+# For an external DB: set postgresql.enabled=false, externalDatabase.enabled=true,
+# and supply BOW_DATABASE_URL via env[] (plain value or secretKeyRef).
+# =============================================================================
+externalDatabase:
+  enabled: false
+
+# =============================================================================
+# Application Configuration (bow-config.yaml)
+# Rendered into a ConfigMap and mounted at /app/bow-config.yaml.
+#
+# IMPORTANT: Sensitive fields (encryptionKey, OIDC clientSecret, SMTP password)
+# should use ${ENV_VAR} placeholders. The application resolves them at runtime
+# from env vars injected via env[] / envFromSecrets[]. This keeps secrets out
+# of the ConfigMap (which is unencrypted in etcd).
+# =============================================================================
+config:
+  # Public base URL shown in emails and redirect URIs
+  baseUrl: "http://localhost:3000"
+
+  features:
+    allowUninvitedSignups: false
+    allowMultipleOrganizations: false
+    verifyEmails: false
+
+  auth:
+    # hybrid | local_only | sso_only
+    mode: "hybrid"
+
+  googleOAuth:
+    enabled: false
+    clientId: ""
+    clientSecret: ""
+
+  # Fernet encryption key for sensitive DB data.
+  # Use ${BOW_ENCRYPTION_KEY} so the real value comes from an env var / Secret.
+  encryptionKey: "${BOW_ENCRYPTION_KEY}"
+
+  intercom:
+    enabled: false
+
+  telemetry:
+    enabled: true
+
+  # Enterprise license key. Use "${BOW_LICENSE_KEY}" to pull from env at runtime.
+  licenseKey: ""
+
+  smtp:
+    # Set enabled: true to render the smtp_settings block in bow-config.yaml
+    enabled: false
+    host: ""
+    port: 587
+    username: ""
+    # Use "${BOW_SMTP_PASSWORD}" for production
+    password: ""
+    fromName: "Bag of Words"
+    fromEmail: ""
+    useTls: true
+    useSsl: false
+    useCredentials: true
+    validateCerts: true
+
+  # OIDC provider list. clientId and clientSecret should use ${ENV_VAR}
+  # placeholders — inject the real values via env[] with secretKeyRef.
+  oidcProviders: []
+  # Example — Microsoft Entra ID:
+  # - name: microsoft
+  #   enabled: true
+  #   issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+  #   clientId: "${BOW_ENTRA_CLIENT_ID}"
+  #   clientSecret: "${BOW_ENTRA_CLIENT_SECRET}"
+  #   scopes: [openid, profile, email]
+  #   pkce: true
+  #   clientAuthMethod: basic
+  #   discovery: true
+  #   uidClaim: sub
+  #   label: ""
+  #   icon: ""
+  #   redirectPath: ""
+  #   extraAuthorizeParams: {}
+  #   extraTokenParams: {}
+
+# =============================================================================
+# Managed database with IAM auth
+# Alternative to the bundled postgres subchart for cloud-managed databases.
+# Set postgres.enabled=false and externalDatabase.enabled=true when using this.
+# provider: password | aws_iam
+# =============================================================================
 database:
   auth:
-    provider: password   # password | aws_iam
-    region: ""           # AWS only — e.g. "us-east-1"
-    sslMode: ""          # e.g. "verify-full" (required for IAM auth)
-  host: ""               # e.g. my-cluster.cluster-xxx.us-east-1.rds.amazonaws.com
+    provider: password
+    region: ""       # AWS only — e.g. "us-east-1"
+    sslMode: ""      # e.g. "verify-full" (required for IAM auth)
+  host: ""           # e.g. my-cluster.cluster-xxx.us-east-1.rds.amazonaws.com
   port: 5432
-  username: ""           # DB user — must have GRANT rds_iam (AWS) or equivalent
-  name: ""               # Database name
+  username: ""       # DB user — must have GRANT rds_iam (AWS) or equivalent
+  name: ""           # Database name
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  type: ClusterIP
+  port: 3000
+  annotations: {}
+
+# =============================================================================
+# Ingress (nginx / standard Kubernetes Ingress)
+# Disable when using httpRoute (Gateway API) instead.
+# =============================================================================
 ingress:
   enabled: true
   className: nginx
-  tls: true
-  clusterIssuerName: prod-cluster-issuer
-serviceAccount:
-  name: bowapp
-  imagePullSecret: bowapp-pull-secret
+  # Extra annotations (e.g. nginx.ingress.kubernetes.io/proxy-body-size: "50m")
   annotations: {}
-config:
-  secretRef: ""
-  googleOauthEnabled: false
-  googleClientId: ""
-  googleClientSecret: ""
-  encryptionKey: ""
-  intercomEnabled: false
-  baseUrl: ""
-  authMode: "hybrid"
-  allowUninvitedSignups: false
-  allowMultipleOrganizations: false
-  verifyEmails: false
-  # List of OIDC providers to enable (empty by default)
-  # Example:
-  # oidcProviders:
-  #   - name: okta
-  #     enabled: true
-  #     issuer: https://YOUR_OKTA_DOMAIN.okta.com/oauth2/default
-  #     clientId: "${BOW_OIDC_OKTA_CLIENT_ID}"   # or plain value
-  #     clientSecret: "${BOW_OIDC_OKTA_CLIENT_SECRET}" # or plain value
-  #     scopes: ["openid", "profile", "email"]
-  #     pkce: true
-  #     clientAuthMethod: basic   # or post
-  #     discovery: true
-  #     uidClaim: sub
-  #     redirectPath: /api/auth/okta/callback
-  #     extraAuthorizeParams: {}
-  #     extraTokenParams: {}
-  oidcProviders: []
-  # Enterprise license key (optional)
-  # For security, prefer using secretRef to store the license key
-  licenseKey: ""
-  smtp:
-    host: ""
-    port: ""
-    username: ""
-    password: ""
-    from_name: ""
-    from_email: ""
-    use_tls: true
-    use_ssl: false
-    use_credentials: true
-    validate_certs: true
+  tls:
+    enabled: true
+    secretName: bowapp-cert
+    # cert-manager ClusterIssuer name — leave empty to skip the annotation
+    clusterIssuer: prod-cluster-issuer
 
+# =============================================================================
+# HTTPRoute — Kubernetes Gateway API
+# Preferred for production clusters with Istio / Envoy Gateway.
+# Set ingress.enabled=false when enabling this.
+# =============================================================================
+httpRoute:
+  enabled: false
+  # parentRefs required when enabled — set to the Gateway this route attaches to
+  parentRefs: []
+  # - name: prod-gateway
+  #   namespace: gateway-system
+  #   sectionName: https
+  hostnames: []
+  # - app.bagofwords.com
 
+# =============================================================================
+# Horizontal Pod Autoscaler
+# =============================================================================
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
 
-resources:
-  requests:
-    cpu: 2
-    memory: 900Mi
-  limits:
-    memory: 1100Mi
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+podDisruptionBudget:
+  enabled: false
+  # Exactly one of minAvailable or maxUnavailable should be set
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# =============================================================================
+# Extra Volumes / VolumeMounts
+# Added to the Deployment in addition to the bow-config.yaml mount.
+# =============================================================================
+extraVolumes: []
+extraVolumeMounts: []
+
+# =============================================================================
+# groundhog2k postgres subchart
+# Bundled for self-hosted convenience. For production, set enabled: false
+# and supply BOW_DATABASE_URL via env[].
+# Full schema: https://github.com/groundhog2k/helm-charts/tree/master/charts/postgres
+# =============================================================================
+postgres:
+  enabled: true
+
+  # Superuser credentials (used internally by PostgreSQL)
+  settings:
+    superuserPassword:
+      value: ""
+    # Reference an existing Secret instead of plain values:
+    # existingSecret: my-pg-secret
+
+  # Application database and user created on first boot
+  userDatabase:
+    name: "bagofwords"
+    user:
+      value: "bow"
+    password:
+      value: ""
+
+  # Persistent storage
+  storage:
+    requestedSize: 20Gi
+    className: ""
+
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

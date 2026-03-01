@@ -1,11 +1,11 @@
 apiVersion: v2
 name: bagofwords
-description: Bag of words - a new ai data tool
+description: Bag of Words — self-hostable AI data and analytics platform
 type: application
-version: 1.0.7
-appVersion: 1.0.1
+version: 2.0.0
+appVersion: "latest"
 dependencies:
-  - name: postgresql
-    version: 16.3.2
-    repository: https://charts.bitnami.com/bitnami
-    condition: postgresql.enabled
+  - name: postgres
+    version: 1.6.1
+    repository: https://groundhog2k.github.io/helm-charts
+    condition: postgres.enabled

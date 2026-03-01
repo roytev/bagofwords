@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bagofwords.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "bagofwords.labels" . | nindent 4 }}
+data:
+  bow-config.yaml: |
+    base_url: {{ .Values.config.baseUrl | quote }}
+
+    features:
+      allow_uninvited_signups: {{ .Values.config.features.allowUninvitedSignups }}
+      allow_multiple_organizations: {{ .Values.config.features.allowMultipleOrganizations }}
+      verify_emails: {{ .Values.config.features.verifyEmails }}
+
+    auth:
+      mode: {{ .Values.config.auth.mode | quote }}
+
+    google_oauth:
+      enabled: {{ .Values.config.googleOAuth.enabled }}
+      {{- if .Values.config.googleOAuth.clientId }}
+      client_id: {{ .Values.config.googleOAuth.clientId | quote }}
+      {{- end }}
+      {{- if .Values.config.googleOAuth.clientSecret }}
+      client_secret: {{ .Values.config.googleOAuth.clientSecret | quote }}
+      {{- end }}
+
+    encryption_key: {{ .Values.config.encryptionKey | quote }}
+
+    intercom:
+      enabled: {{ .Values.config.intercom.enabled }}
+
+    telemetry:
+      enabled: {{ .Values.config.telemetry.enabled }}
+
+    license:
+      key: {{ .Values.config.licenseKey | quote }}
+
+    {{- if .Values.config.smtp.enabled }}
+    smtp_settings:
+      host: {{ .Values.config.smtp.host | quote }}
+      port: {{ .Values.config.smtp.port }}
+      username: {{ .Values.config.smtp.username | quote }}
+      password: {{ .Values.config.smtp.password | quote }}
+      from_name: {{ .Values.config.smtp.fromName | quote }}
+      from_email: {{ .Values.config.smtp.fromEmail | quote }}
+      use_tls: {{ .Values.config.smtp.useTls }}
+      use_ssl: {{ .Values.config.smtp.useSsl }}
+      use_credentials: {{ .Values.config.smtp.useCredentials }}
+      validate_certs: {{ .Values.config.smtp.validateCerts }}
+    {{- end }}
+
+    oidc_providers:
+    {{- if .Values.config.oidcProviders }}
+    {{- range $p := .Values.config.oidcProviders }}
+      - name: {{ $p.name | quote }}
+        enabled: {{ default true $p.enabled }}
+        issuer: {{ $p.issuer | quote }}
+        client_id: {{ default "" $p.clientId | quote }}
+        client_secret: {{ default "" $p.clientSecret | quote }}
+        scopes: {{ default (list "openid" "profile" "email") $p.scopes | toJson }}
+        pkce: {{ default true $p.pkce }}
+        client_auth_method: {{ default "basic" $p.clientAuthMethod | quote }}
+        discovery: {{ default true $p.discovery }}
+        uid_claim: {{ default "sub" $p.uidClaim | quote }}
+        {{- if $p.label }}
+        label: {{ $p.label | quote }}
+        {{- end }}
+        {{- if $p.icon }}
+        icon: {{ $p.icon | quote }}
+        {{- end }}
+        {{- if $p.redirectPath }}
+        redirect_path: {{ $p.redirectPath | quote }}
+        {{- end }}
+        {{- if $p.extraAuthorizeParams }}
+        extra_authorize_params: {{ $p.extraAuthorizeParams | toJson }}
+        {{- end }}
+        {{- if $p.extraTokenParams }}
+        extra_token_params: {{ $p.extraTokenParams | toJson }}
+        {{- end }}
+    {{- end }}
+    {{- else }}
+      []
+    {{- end }}

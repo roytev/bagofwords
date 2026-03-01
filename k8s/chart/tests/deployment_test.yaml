@@ -1,0 +1,378 @@
+suite: deployment
+
+templates:
+  - deployment.yaml
+
+tests:
+  # ---------------------------------------------------------------------------
+  # Resource basics
+  # ---------------------------------------------------------------------------
+  - it: renders exactly one Deployment
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+      - isAPIVersion:
+          of: apps/v1
+
+  - it: names the Deployment with fullname
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-bagofwords
+
+  - it: sets standard selector labels
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: bagofwords
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  # ---------------------------------------------------------------------------
+  # Replicas
+  # ---------------------------------------------------------------------------
+  - it: sets replicaCount from values
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: omits replicas field when HPA is enabled
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  # ---------------------------------------------------------------------------
+  # Container image
+  # ---------------------------------------------------------------------------
+  - it: sets the container image from values
+    set:
+      image.repository: myregistry/bagofwords
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: myregistry/bagofwords:v1.2.3
+
+  - it: sets imagePullPolicy from values
+    set:
+      image.pullPolicy: IfNotPresent
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  # ---------------------------------------------------------------------------
+  # Service account
+  # ---------------------------------------------------------------------------
+  - it: sets serviceAccountName from serviceAccount.name
+    set:
+      serviceAccount.name: my-sa
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-sa
+
+  # ---------------------------------------------------------------------------
+  # Security contexts
+  # ---------------------------------------------------------------------------
+  - it: sets pod security context fsGroup
+    set:
+      podSecurityContext.fsGroup: 1000
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1000
+
+  - it: sets container security context with readOnlyRootFilesystem false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  # ---------------------------------------------------------------------------
+  # Health probes
+  # ---------------------------------------------------------------------------
+  - it: sets startup probe targeting /health on port 3000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 30
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.initialDelaySeconds
+          value: 30
+
+  - it: sets readiness probe targeting /health on port 3000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.failureThreshold
+          value: 5
+
+  - it: sets liveness probe targeting /health on port 3000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.initialDelaySeconds
+          value: 15
+
+  # ---------------------------------------------------------------------------
+  # Resources
+  # ---------------------------------------------------------------------------
+  - it: sets resource requests and limits from values
+    set:
+      resources.requests.cpu: "500m"
+      resources.requests.memory: "512Mi"
+      resources.limits.cpu: "1"
+      resources.limits.memory: "1Gi"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: "500m"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: "1Gi"
+
+  # ---------------------------------------------------------------------------
+  # Port
+  # ---------------------------------------------------------------------------
+  - it: exposes container port 3000 named http
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: http
+
+  # ---------------------------------------------------------------------------
+  # Environment variables
+  # ---------------------------------------------------------------------------
+  - it: always injects BOW_CONFIG_PATH env var
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BOW_CONFIG_PATH
+            value: /app/bow-config.yaml
+          any: true
+
+  - it: auto-injects BOW_DATABASE_URL when postgres subchart is enabled
+    set:
+      postgres.enabled: true
+      postgres.userDatabase.name: bagofwords
+      postgres.userDatabase.user.value: bow
+      postgres.userDatabase.password.value: secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BOW_DATABASE_URL
+            value: "postgresql://bow:secret@RELEASE-NAME-postgres:5432/bagofwords"
+          any: true
+
+  - it: does not inject BOW_DATABASE_URL when postgres subchart is disabled
+    set:
+      postgres.enabled: false
+      externalDatabase.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BOW_DATABASE_URL
+          any: true
+
+  - it: renders user-supplied plain env vars
+    set:
+      env:
+        - name: MY_VAR
+          value: my-value
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MY_VAR
+            value: my-value
+          any: true
+
+  - it: renders user-supplied secretKeyRef env vars
+    set:
+      env:
+        - name: BOW_ENTRA_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: bow-sso-secret
+              key: CLIENT_ID
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BOW_ENTRA_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: bow-sso-secret
+                key: CLIENT_ID
+          any: true
+
+  # ---------------------------------------------------------------------------
+  # envFrom
+  # ---------------------------------------------------------------------------
+  - it: renders envFrom secretRef when envFromSecrets is set
+    set:
+      envFromSecrets:
+        - bow-app-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            secretRef:
+              name: bow-app-secret
+          any: true
+
+  - it: renders envFrom configMapRef when envFromConfigMaps is set
+    set:
+      envFromConfigMaps:
+        - bow-extra-config
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: bow-extra-config
+          any: true
+
+  - it: does not render envFrom when neither is set
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  # ---------------------------------------------------------------------------
+  # bow-config volume mount
+  # ---------------------------------------------------------------------------
+  - it: mounts bow-config configmap at /app/bow-config.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: bow-config
+            mountPath: /app/bow-config.yaml
+            subPath: bow-config.yaml
+            readOnly: true
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: bow-config
+          any: true
+
+  # ---------------------------------------------------------------------------
+  # Extra volumes / mounts
+  # ---------------------------------------------------------------------------
+  - it: appends extraVolumes and extraVolumeMounts
+    set:
+      extraVolumes:
+        - name: extra-vol
+          emptyDir: {}
+      extraVolumeMounts:
+        - name: extra-vol
+          mountPath: /extra
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: extra-vol
+            emptyDir: {}
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: extra-vol
+            mountPath: /extra
+          any: true
+
+  # ---------------------------------------------------------------------------
+  # Node scheduling
+  # ---------------------------------------------------------------------------
+  - it: sets nodeSelector when provided
+    set:
+      nodeSelector:
+        karpenter.sh/nodepool: general-apps
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["karpenter.sh/nodepool"]
+          value: general-apps
+
+  - it: does not render nodeSelector when empty
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+
+  - it: sets tolerations when provided
+    set:
+      tolerations:
+        - key: role
+          value: general-apps
+          effect: NoSchedule
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: role
+            value: general-apps
+            effect: NoSchedule
+          any: true
+
+  - it: does not render tolerations when empty
+    asserts:
+      - notExists:
+          path: spec.template.spec.tolerations
+
+  # ---------------------------------------------------------------------------
+  # Pod annotations / labels
+  # ---------------------------------------------------------------------------
+  - it: sets pod annotations when provided
+    set:
+      podAnnotations:
+        reloader.stakater.com/auto: "true"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["reloader.stakater.com/auto"]
+          value: "true"
+
+  - it: sets extra pod labels when provided
+    set:
+      podLabels:
+        team: platform
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels.team
+          value: platform

@@ -1,0 +1,246 @@
+suite: configmap
+
+templates:
+  - configmap.yaml
+
+tests:
+  # ---------------------------------------------------------------------------
+  # Resource basics
+  # ---------------------------------------------------------------------------
+  - it: renders exactly one ConfigMap
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - isAPIVersion:
+          of: v1
+
+  - it: names the ConfigMap with fullname suffix
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-bagofwords-config
+
+  - it: sets standard labels
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: bagofwords
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  # ---------------------------------------------------------------------------
+  # bow-config.yaml key exists
+  # ---------------------------------------------------------------------------
+  - it: contains bow-config.yaml data key
+    asserts:
+      - isNotNull:
+          path: data["bow-config.yaml"]
+
+  # ---------------------------------------------------------------------------
+  # base_url
+  # ---------------------------------------------------------------------------
+  - it: renders base_url from values
+    set:
+      config.baseUrl: "https://bow.example.com"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'base_url: "https://bow\.example\.com"'
+
+  # ---------------------------------------------------------------------------
+  # features
+  # ---------------------------------------------------------------------------
+  - it: renders feature flags as false by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'allow_uninvited_signups: false'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'allow_multiple_organizations: false'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'verify_emails: false'
+
+  - it: renders feature flags as true when set
+    set:
+      config.features.allowUninvitedSignups: true
+      config.features.allowMultipleOrganizations: true
+      config.features.verifyEmails: true
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'allow_uninvited_signups: true'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'allow_multiple_organizations: true'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'verify_emails: true'
+
+  # ---------------------------------------------------------------------------
+  # auth mode
+  # ---------------------------------------------------------------------------
+  - it: renders auth.mode as hybrid by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'mode: "hybrid"'
+
+  - it: renders auth.mode as sso_only when set
+    set:
+      config.auth.mode: sso_only
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'mode: "sso_only"'
+
+  # ---------------------------------------------------------------------------
+  # encryption_key — must be a placeholder, NOT a raw secret
+  # ---------------------------------------------------------------------------
+  - it: renders encryption_key as env-var placeholder by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'encryption_key: "\$\{BOW_ENCRYPTION_KEY\}"'
+
+  - it: renders custom encryption_key placeholder when set
+    set:
+      config.encryptionKey: "${MY_CUSTOM_KEY}"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'encryption_key: "\$\{MY_CUSTOM_KEY\}"'
+
+  # ---------------------------------------------------------------------------
+  # google_oauth
+  # ---------------------------------------------------------------------------
+  - it: renders google_oauth disabled by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'enabled: false'
+
+  - it: renders google_oauth client_id when enabled
+    set:
+      config.googleOAuth.enabled: true
+      config.googleOAuth.clientId: "my-client-id"
+      config.googleOAuth.clientSecret: "${GOOGLE_SECRET}"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'client_id: "my-client-id"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'client_secret: "\$\{GOOGLE_SECRET\}"'
+
+  # ---------------------------------------------------------------------------
+  # smtp — only rendered when enabled
+  # ---------------------------------------------------------------------------
+  - it: does not render smtp_settings block when disabled
+    set:
+      config.smtp.enabled: false
+    asserts:
+      - notMatchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'smtp_settings'
+
+  - it: renders smtp_settings when enabled
+    set:
+      config.smtp.enabled: true
+      config.smtp.host: "smtp.example.com"
+      config.smtp.port: 587
+      config.smtp.fromName: "Bag of Words"
+      config.smtp.fromEmail: "noreply@example.com"
+      config.smtp.password: "${BOW_SMTP_PASSWORD}"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'smtp_settings'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'host: "smtp\.example\.com"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'password: "\$\{BOW_SMTP_PASSWORD\}"'
+
+  # ---------------------------------------------------------------------------
+  # oidc_providers
+  # ---------------------------------------------------------------------------
+  - it: renders empty oidc_providers list by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'oidc_providers:'
+
+  - it: renders Microsoft Entra ID OIDC provider with env-var placeholders
+    set:
+      config.oidcProviders:
+        - name: microsoft
+          enabled: true
+          issuer: "https://login.microsoftonline.com/tenant/v2.0"
+          clientId: "${BOW_ENTRA_CLIENT_ID}"
+          clientSecret: "${BOW_ENTRA_CLIENT_SECRET}"
+          pkce: true
+          discovery: true
+          uidClaim: sub
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'name: "microsoft"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'issuer: "https://login\.microsoftonline\.com/tenant/v2\.0"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'client_id: "\$\{BOW_ENTRA_CLIENT_ID\}"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'client_secret: "\$\{BOW_ENTRA_CLIENT_SECRET\}"'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'pkce: true'
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'uid_claim: "sub"'
+
+  - it: renders optional redirectPath when set
+    set:
+      config.oidcProviders:
+        - name: okta
+          issuer: "https://okta.example.com"
+          redirectPath: "/auth/callback"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'redirect_path: "/auth/callback"'
+
+  - it: omits redirect_path when not set
+    set:
+      config.oidcProviders:
+        - name: okta
+          issuer: "https://okta.example.com"
+    asserts:
+      - notMatchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'redirect_path'
+
+  # ---------------------------------------------------------------------------
+  # license
+  # ---------------------------------------------------------------------------
+  - it: renders empty license key by default
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'key: ""'
+
+  - it: renders license key placeholder when set
+    set:
+      config.licenseKey: "${BOW_LICENSE_KEY}"
+    asserts:
+      - matchRegex:
+          path: data["bow-config.yaml"]
+          pattern: 'key: "\$\{BOW_LICENSE_KEY\}"'

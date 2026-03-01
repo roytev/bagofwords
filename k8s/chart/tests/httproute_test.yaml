@@ -1,0 +1,103 @@
+suite: httproute
+
+templates:
+  - httproute.yaml
+
+tests:
+  - it: does not render HTTPRoute when disabled
+    set:
+      httpRoute.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders HTTPRoute when enabled with parentRefs
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+          namespace: gateway-system
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HTTPRoute
+      - isAPIVersion:
+          of: gateway.networking.k8s.io/v1
+
+  - it: names the HTTPRoute with fullname
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-bagofwords
+
+  - it: sets parentRefs from values
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+          namespace: gateway-system
+          sectionName: https
+    asserts:
+      - equal:
+          path: spec.parentRefs[0].name
+          value: prod-gw
+      - equal:
+          path: spec.parentRefs[0].namespace
+          value: gateway-system
+      - equal:
+          path: spec.parentRefs[0].sectionName
+          value: https
+
+  - it: sets hostnames when provided
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+      httpRoute.hostnames:
+        - bow.example.com
+    asserts:
+      - equal:
+          path: spec.hostnames[0]
+          value: bow.example.com
+
+  - it: does not render hostnames block when empty
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+    asserts:
+      - notExists:
+          path: spec.hostnames
+
+  - it: routes PathPrefix / to the bagofwords service
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: prod-gw
+      service.port: 3000
+    asserts:
+      - equal:
+          path: spec.rules[0].matches[0].path.type
+          value: PathPrefix
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: RELEASE-NAME-bagofwords
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 3000
+
+  - it: fails rendering when parentRefs is empty and httpRoute is enabled
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs: []
+    asserts:
+      - failedTemplate:
+          errorMessage: "httpRoute.parentRefs must be set when httpRoute.enabled is true"
