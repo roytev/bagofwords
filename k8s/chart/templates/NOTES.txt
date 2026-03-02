@@ -35,14 +35,14 @@ Inject it via env[] with a secretKeyRef or envFromSecrets[]:
           name: my-bow-secret
           key: encryption_key
 
-{{- if .Values.postgresql.enabled }}
+{{- if .Values.postgres.enabled }}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Bundled PostgreSQL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 A single-instance PostgreSQL is included for convenience.
 For production, consider an external managed database and set:
 
-  postgresql.enabled: false
+  postgres.enabled: false
   externalDatabase.enabled: true
   env:
     - name: BOW_DATABASE_URL
