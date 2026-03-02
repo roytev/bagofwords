@@ -19,7 +19,7 @@ helm upgrade -i --create-namespace \
  -n bowapp bowapp bow/bagofwords \
  --set postgres.userDatabase.user.value=<PG-USER> \
  --set postgres.userDatabase.password.value=<PG-PASS> \
- --set postgres.userDatabase.name=bagofwords \
+ --set postgres.userDatabase.name.value=bagofwords \
  --set host=<HOST>
 ```
 
@@ -30,7 +30,7 @@ helm upgrade -i --create-namespace \
  --set host=<HOST> \
  --set postgres.userDatabase.user.value=<PG-USER> \
  --set postgres.userDatabase.password.value=<PG-PASS> \
- --set postgres.userDatabase.name=bagofwords \
+ --set postgres.userDatabase.name.value=bagofwords \
  --set ingress.tls.enabled=false
 ```
 
@@ -41,7 +41,7 @@ helm upgrade -i --create-namespace \
  --set host=<HOST> \
  --set postgres.userDatabase.user.value=<PG-USER> \
  --set postgres.userDatabase.password.value=<PG-PASS> \
- --set postgres.userDatabase.name=bagofwords \
+ --set postgres.userDatabase.name.value=bagofwords \
  --set config.googleOAuth.enabled=true \
  --set config.googleOAuth.clientId=<CLIENT_ID> \
  --set config.googleOAuth.clientSecret=<CLIENT_SECRET>

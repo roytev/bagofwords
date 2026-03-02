@@ -85,5 +85,5 @@ Uses userDatabase credentials (not the superuser).
 */}}
 {{- define "bagofwords.databaseUrl" -}}
 {{- $db := .Values.postgres.userDatabase -}}
-{{- printf "postgresql://%s:%s@%s:5432/%s" $db.user.value $db.password.value (include "bagofwords.postgresqlHost" .) $db.name }}
+{{- printf "postgresql://%s:%s@%s:5432/%s" $db.user.value $db.password.value (include "bagofwords.postgresqlHost" .) $db.name.value }}
 {{- end }}

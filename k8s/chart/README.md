@@ -15,7 +15,7 @@ helm upgrade -i --create-namespace \
   -n bowapp bowapp bow/bagofwords \
   --set postgres.userDatabase.user.value=<DB-USER> \
   --set postgres.userDatabase.password.value=<DB-PASS> \
-  --set postgres.userDatabase.name=bagofwords \
+  --set postgres.userDatabase.name.value=bagofwords \
   --set host=<HOST>
 
 # Deploy with AWS Aurora + IAM auth

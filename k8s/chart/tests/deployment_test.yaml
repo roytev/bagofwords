@@ -189,7 +189,7 @@ tests:
   - it: auto-injects BOW_DATABASE_URL when postgres subchart is enabled
     set:
       postgres.enabled: true
-      postgres.userDatabase.name: bagofwords
+      postgres.userDatabase.name.value: bagofwords
       postgres.userDatabase.user.value: bow
       postgres.userDatabase.password.value: secret
     asserts:

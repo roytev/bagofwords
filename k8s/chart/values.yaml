@@ -325,7 +325,8 @@ postgres:
 
   # Application database and user created on first boot
   userDatabase:
-    name: "bagofwords"
+    name:
+      value: "bagofwords"
     user:
       value: "bow"
     password:
